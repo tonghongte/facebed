@@ -11,13 +11,14 @@ import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from functools import wraps
+from html import escape
 from typing import Self, Callable
 from urllib.parse import quote as _quote_
-from html import escape
 from urllib.parse import urlparse
 
-import stealth_requests as requests
+import crawleruseragents
 import requests as rq
+import stealth_requests as requests
 import yaml
 from bottle import Bottle, request, response, static_file
 from bs4 import BeautifulSoup
@@ -185,6 +186,7 @@ class Cookies:
             logging.info(f'loaded {len(self.cookies)} cookies from {fn}')
         self.get_cookies()
 
+    # noinspection PyMethodMayBeStatic
     def is_valid_cookie(self, entry: dict) -> bool:
         return int(entry.get('expirationDate', 2**31)) > time.time()
 
@@ -440,7 +442,7 @@ class SinglePhotoParser:
         raise FacebedException('cannot find single image')
 
     @staticmethod
-    def process_post(post_path: str):
+    def process_post(post_path: str) -> ParsedPost:
         http_response = requests.get(JsonParser.ensure_full_url(post_path),
                                      headers=JsonParser.get_headers(), cookies=acc.get_cookies())
         html_parser = BeautifulSoup(http_response.text, 'html.parser')
@@ -454,8 +456,47 @@ class SinglePhotoParser:
         image_url = SinglePhotoParser.get_single_image(html_parser)
 
         return ParsedPost(post_author, post_text.strip(), [image_url], JsonParser.ensure_full_url(post_path),
-                          post_date, likes, cmts, shares, [])
+                          post_date, likes, cmts, shares, [])\
 
+
+class PhotocomParser:
+    @staticmethod
+    def get_content_node(html_parser: BeautifulSoup) -> dict:
+        for json_block in JsonParser.get_json_blocks(html_parser):
+            if 'attached_comment' in json_block and 'preferred_body' in json_block:
+                return Jq.first(json.loads(json_block), 'result')
+        raise FacebedException('Cannot process photocom (cn)')
+
+    @staticmethod
+    def get_reaction_count(html_parser: BeautifulSoup) -> int:
+        for json_block in JsonParser.get_json_blocks(html_parser):
+            if 'attached_comment' in json_block and 'unified_reactors' in json_block:
+                return Jq.first(json.loads(json_block), 'unified_reactors')['count']
+        raise FacebedException('Cannot process photocom (rc)')
+
+    @staticmethod
+    def get_attached_image_and_url(html_parser: BeautifulSoup) -> tuple[str, str]:
+        for json_block in JsonParser.get_json_blocks(html_parser):
+            if 'attached_comment' in json_block and 'unified_reactors' in json_block:
+                cur = Jq.first(json.loads(json_block), 'currMedia')
+                return str(cur['image']['uri']), str(cur['attached_comment']['feedback']['url'])
+        raise FacebedException('Cannot process photocom (iau)')
+
+    @staticmethod
+    def process_post(post_path: str) -> ParsedPost:
+        http_response = requests.get(JsonParser.ensure_full_url(post_path),
+                                     headers=JsonParser.get_headers(), cookies=acc.get_cookies())
+        html_parser = BeautifulSoup(http_response.text, 'html.parser')
+        content_node = PhotocomParser.get_content_node(html_parser)
+        body = content_node['data']['attached_comment']['preferred_body']
+
+        op_name = '💬 ' + content_node['data']['owner']['name']
+        post_text = '' if body is None else body['text']
+        post_time = content_node['data']['created_time']
+        post_image, post_url = PhotocomParser.get_attached_image_and_url(html_parser)
+        reaction_count = PhotocomParser.get_reaction_count(html_parser)
+
+        return ParsedPost(op_name, post_text, [post_image], post_url, post_time, Utils.human_format(reaction_count), 'null', 'null', [])
 
 class ReelsParser:
     @staticmethod
@@ -680,6 +721,21 @@ def format_full_post_embed(post: ParsedPost) -> str:
         </html>''')
 
 
+def format_redirect_page(url: str) -> str:
+    return Utils.prettify(f'''<!DOCTYPE HTML>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="refresh" content="0; url={quote(url)}">
+        <script type="text/javascript">
+            window.location.href = "{escape(url)}"
+        </script>
+        <title>redirecting...</title>
+    </head>
+    <body>
+    </body>
+</html>''')
+
 def process_post(post_path: str) -> str:
     post_path = post_path.removeprefix(WWWFB).removeprefix('/')
     parsed_post = JsonParser.process_post(post_path)
@@ -700,8 +756,15 @@ def index(path: str):
     if request.query_string:
         path += f'?{request.query_string}'
 
+    # processing image in comment
+    # needs priority because this returns a different link than what the user gave it
     if 'type' in request.query.dict and '3' in request.query.dict['type']:
-        return format_error_message_embed(f'{WWWFB}/{path}')
+        return format_full_post_embed(PhotocomParser.process_post(path))
+
+    if not crawleruseragents.is_crawler(request.headers.get('User-Agent', '')):
+        response.status = 301
+        response.headers['Location'] = f'{WWWFB}/{path}'
+        return format_redirect_page(f'{WWWFB}/{path}')
 
     try:
         if re.match('^(/)?share/v/.*', path):
