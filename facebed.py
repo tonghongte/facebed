@@ -169,6 +169,13 @@ class Jq:
         return Jq.iterate(obj, key, first=True)
 
     @staticmethod
+    def has(obj: dict, *args: str) -> bool:
+        for k in args:
+            if not Jq.first(obj, k):
+                return False
+        return True
+
+    @staticmethod
     def last(obj: dict, key: str) -> dict:
         return Jq.iterate(obj, key)[-1]
 
@@ -246,7 +253,6 @@ class Story:
 
         return video_links
 
-
     @staticmethod
     def get_image_links_post_json(post_json: dict) -> list[str]:
         all_attachments = Jq.all(post_json, 'attachment')
@@ -317,27 +323,24 @@ class JsonParser:
 
 
     @staticmethod
-    def get_json_blocks(html_parser: BeautifulSoup, sort=True) -> list[str]:
+    def get_json_blocks(html_parser: BeautifulSoup, sort=True) -> list[dict]:
         script_elements = html_parser.find_all('script', attrs={'type': 'application/json', 'data-content-len': True, 'data-sjs': True})
         if sort:
             script_elements.sort(key=lambda e: int(e.attrs['data-content-len']), reverse=True)
-        return [e.text for e in script_elements]
+        return [json.loads(e.text) for e in script_elements]
 
     @staticmethod
     def get_post_json(html_parser: BeautifulSoup) -> dict:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'i18n_reaction_count' in json_block:  # TODO: add more robust detection
-                bloc = json.loads(json_block)
-                assert bloc
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'i18n_reaction_count') :  # TODO: add more robust detection
                 return bloc
         raise FacebedException('cannot find post json')
 
     @staticmethod
     def get_group_name(html_parser: BeautifulSoup) -> str:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'group_member_profiles' in json_block and 'formatted_count_text' in json_block:
-                group_json = json.loads(json_block)
-                for group_object in Jq.all(group_json, 'group'):
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'group_member_profiles', 'formatted_count_text'):
+                for group_object in Jq.all(bloc, 'group'):
                     if 'name' in group_object:
                         return group_object['name']
         return ''
@@ -418,27 +421,26 @@ class JsonParser:
                           likes, cmts, shares, story.video_links)
 
 
-
 class SinglePhotoParser:
     @staticmethod
     def get_content_node(html_parser: BeautifulSoup) -> dict:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'message_preferred_body' in json_block and 'container_story' in json_block:
-                return Jq.first(json.loads(json_block), 'data')
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'message_preferred_body', 'container_story'):
+                return Jq.first(bloc, 'data')
         raise FacebedException('Cannot process post (cn)')
 
     @staticmethod
     def get_interactions_node(html_parser: BeautifulSoup) -> dict:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'comet_ufi_summary_and_actions_renderer' in json_block:
-                return json.loads(json_block)
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'comet_ufi_summary_and_actions_renderer'):
+                return bloc
         raise FacebedException('Cannot process post (in)')
 
     @staticmethod
     def get_single_image(html_parser: BeautifulSoup) -> str:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'prefetch_uris_v2' in json_block:
-                return str(Jq.first(json.loads(json_block), 'prefetch_uris_v2')[0]['uri'])
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'prefetch_uris_v2'):
+                return str(Jq.first(bloc, 'prefetch_uris_v2')[0]['uri'])
         raise FacebedException('cannot find single image')
 
     @staticmethod
@@ -462,23 +464,23 @@ class SinglePhotoParser:
 class PhotocomParser:
     @staticmethod
     def get_content_node(html_parser: BeautifulSoup) -> dict:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'attached_comment' in json_block and 'preferred_body' in json_block:
-                return Jq.first(json.loads(json_block), 'result')
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'attached_comment') and not Jq.has(bloc, 'unified_reactors'):
+                return Jq.first(bloc, 'result')
         raise FacebedException('Cannot process photocom (cn)')
 
     @staticmethod
     def get_reaction_count(html_parser: BeautifulSoup) -> int:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'attached_comment' in json_block and 'unified_reactors' in json_block:
-                return Jq.first(json.loads(json_block), 'unified_reactors')['count']
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'attached_comment', 'unified_reactors'):
+                return Jq.first(bloc, 'unified_reactors')['count']
         raise FacebedException('Cannot process photocom (rc)')
 
     @staticmethod
     def get_attached_image_and_url(html_parser: BeautifulSoup) -> tuple[str, str]:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'attached_comment' in json_block and 'unified_reactors' in json_block:
-                cur = Jq.first(json.loads(json_block), 'currMedia')
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'attached_comment', 'unified_reactors'):
+                cur = Jq.first(bloc, 'currMedia')
                 return str(cur['image']['uri']), str(cur['attached_comment']['feedback']['url'])
         raise FacebedException('Cannot process photocom (iau)')
 
@@ -490,13 +492,14 @@ class PhotocomParser:
         content_node = PhotocomParser.get_content_node(html_parser)
         body = content_node['data']['attached_comment']['preferred_body']
 
-        op_name = '💬 ' + content_node['data']['owner']['name']
+        op_name = content_node['data']['owner']['name'] + ' (💬)'
         post_text = '' if body is None else body['text']
         post_time = content_node['data']['created_time']
         post_image, post_url = PhotocomParser.get_attached_image_and_url(html_parser)
         reaction_count = PhotocomParser.get_reaction_count(html_parser)
 
         return ParsedPost(op_name, post_text, [post_image], post_url, post_time, Utils.human_format(reaction_count), 'null', 'null', [])
+
 
 class ReelsParser:
     @staticmethod
@@ -517,36 +520,36 @@ class ReelsParser:
             return work_node(user_node)
 
         # randomly breaks if sorted
-        for json_block in JsonParser.get_json_blocks(html_parser, sort=False):
-            if 'browser_native_hd_url' in json_block or 'browser_native_sd_url' in json_block:
-                return work_node(json.loads(json_block))
+        for bloc in JsonParser.get_json_blocks(html_parser, sort=False):
+            if Jq.has(bloc, 'browser_native_hd_url') or Jq.has(bloc, 'browser_native_sd_url'):
+                return work_node(bloc)
 
         raise FacebedException('Invalid reels link (vn)')
 
 
     @staticmethod
     def get_content_node(html_parser: BeautifulSoup) -> dict:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'browser_native_' in json_block and 'creation_story' in json_block:
-                return Jq.first(json.loads(json_block), 'creation_story')
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc, 'browser_native_sd_url', 'creation_story'):
+                return Jq.first(bloc, 'creation_story')
         raise FacebedException('Invalid reels link (cn)')
+
 
     @staticmethod
     def get_reaction_counts(html_parser: BeautifulSoup, is_ig: bool, video_id: str) -> tuple[str, str, str]:
         blocks: list[dict] = []
-        for json_block in JsonParser.get_json_blocks(html_parser, sort=False):
-            if 'unified_reactors' in json_block:
-                block = json.loads(json_block)
-                if any([vid == video_id for vid in Jq.all(block, 'id')]):
-                    blocks.append(block)
+        for bloc in JsonParser.get_json_blocks(html_parser, sort=False):
+            if Jq.has(bloc, 'unified_reactors'):
+                if any([vid == video_id for vid in Jq.all(bloc, 'id')]):
+                    blocks.append(bloc)
 
         if len(blocks) == 0:
             raise FacebedException('Cannot process post (cn)')
 
         # assuming the last one contains ig info
-        block = blocks[0]
-        first_fb = Jq.first(block, 'feedback')
-        last_fb = Jq.last(block, 'feedback')
+        bloc = blocks[0]
+        first_fb = Jq.first(bloc, 'feedback')
+        last_fb = Jq.last(bloc, 'feedback')
 
         if 'cross_universe_feedback_info' in str(first_fb):
             first_fb, last_fb = last_fb, first_fb
@@ -573,7 +576,7 @@ class ReelsParser:
         op_name = ('📷 @' if is_ig else '') + owner_info['username' if is_ig else 'name']
         post_url = content_node['short_form_video_context']['shareable_url']
         post_date = content_node['creation_time']
-        post_text = content_node['message']['text']
+        post_text = '' if content_node['message'] is None else content_node['message']['text']
 
         likes, cmts, shares = ReelsParser.get_reaction_counts(html_parser, is_ig, video_id)
 
@@ -587,18 +590,17 @@ class VideoWatchParser:
     # excluding group post video since they are handled by jsonparser
     @staticmethod
     def get_op_name(html_parser: BeautifulSoup) -> str:
-        for json_block in JsonParser.get_json_blocks(html_parser, sort=False):
-            if 'is_additional_profile_plus' in json_block:
-                bloc = json.loads(json_block)
+        for bloc in JsonParser.get_json_blocks(html_parser, sort=False):
+            if Jq.has(bloc, 'is_additional_profile_plus'):
                 return Jq.first(bloc, 'owner')['name']
         raise FacebedException('Invalid watch link (opn)')
 
 
     @staticmethod
     def get_content_node(html_parser: BeautifulSoup) -> dict:
-        for json_block in JsonParser.get_json_blocks(html_parser):
-            if 'comment_rendering_instance' in json_block and 'video_view_count_renderer' in json_block:
-                return Jq.first(json.loads(json_block), 'result')['data']
+        for bloc in JsonParser.get_json_blocks(html_parser):
+            if Jq.has(bloc,'comment_rendering_instance', 'video_view_count_renderer'):
+                return Jq.first(bloc, 'result')['data']
         raise FacebedException('Invalid watch link (cn)')
 
     @staticmethod
@@ -735,6 +737,7 @@ def format_redirect_page(url: str) -> str:
     <body>
     </body>
 </html>''')
+
 
 def process_post(post_path: str) -> str:
     post_path = post_path.removeprefix(WWWFB).removeprefix('/')
