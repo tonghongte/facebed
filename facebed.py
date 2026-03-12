@@ -241,7 +241,7 @@ class Story:
             text += f'\n╰┈➤ {self.attached_story.author_name}\n{self.attached_story.text}'
         title, url = self.link_card
         if url:
-            text += f'\n🔗 {title}\n{url}' if title else f'\n🔗 {url}'
+            text += f'\n# 🔗 [{title}]({url})' if title else f'\n🔗 {url}'
         return text
 
     @staticmethod
