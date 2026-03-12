@@ -275,8 +275,12 @@ class Story:
         one_img = Story.fallback_get_link_card_image(post_json)
         if one_img:
             return [one_img]
-        # DEBUG: dump attachments when no image found, to identify link card structure
-        Utils.d({'attachments': all_attachments}, '_link_card_debug')
+        # DEBUG: log attachment keys when no image found, to identify link card structure
+        for i, att in enumerate(all_attachments):
+            logging.info(f'[link_card_debug] attachment[{i}] keys: {list(att.keys())}')
+            for k, v in att.items():
+                if isinstance(v, dict):
+                    logging.info(f'[link_card_debug]   .{k} keys: {list(v.keys())}')
         return []
 
     # facebook broke the original selector for all single-image posts, circa 10/12/2024
