@@ -225,6 +225,7 @@ class Story:
         self.video_links = self.get_video_links(story_json)
         self.url = story_json['wwwURL']
         self.author_id = story_json['actors'][0]['id']
+        self.link_card = self.get_link_card(story_json)
 
         if 'attached_story' in story_json and story_json['attached_story'] and 'actors' in story_json['attached_story']:
             self.attached_story = Story(story_json['attached_story'])
@@ -238,7 +239,24 @@ class Story:
         text = self.text
         if self.attached_story:
             text += f'\n╰┈➤ {self.attached_story.author_name}\n{self.attached_story.text}'
+        title, url = self.link_card
+        if url:
+            text += f'\n🔗 {title}\n{url}' if title else f'\n🔗 {url}'
         return text
+
+    @staticmethod
+    def get_link_card(post_json: dict) -> tuple[str, str]:
+        for attachment_set in Jq.all(post_json, 'attachment'):
+            target = attachment_set.get('target')
+            if not isinstance(target, dict):
+                continue
+            url = target.get('external_url', '')
+            if not url:
+                continue
+            title_obj = attachment_set.get('title_with_entities')
+            title = title_obj.get('text', '') if isinstance(title_obj, dict) else ''
+            return title, url
+        return '', ''
 
     @staticmethod
     def get_video_links(post_json: dict) -> list[str]:
