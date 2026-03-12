@@ -272,6 +272,9 @@ class Story:
         one_img = Story.fallback_get_image_link(post_json)
         if one_img:
             return [one_img]
+        one_img = Story.fallback_get_link_card_image(post_json)
+        if one_img:
+            return [one_img]
         return []
 
     # facebook broke the original selector for all single-image posts, circa 10/12/2024
@@ -279,6 +282,22 @@ class Story:
     def fallback_get_image_link(post_json: dict) -> str:
         for aa in Jq.all(post_json, 'comet_photo_attachment_resolution_renderer'):
             return aa['image']['uri']
+        return ''
+
+    # link card attachments (posts embedding an external article/URL) store their
+    # preview image under 'thumbnail' or a bare 'image' dict rather than 'photo_image'
+    @staticmethod
+    def fallback_get_link_card_image(post_json: dict) -> str:
+        for attachment_set in Jq.all(post_json, 'attachment'):
+            for img_key in ('thumbnail', 'image'):
+                for img in Jq.all(attachment_set, img_key):
+                    if isinstance(img, dict) and 'uri' in img:
+                        uri = img['uri']
+                        # skip tiny icons / sticker thumbs (usually < 200px wide)
+                        w = img.get('width', 9999)
+                        if isinstance(w, int) and w < 200:
+                            continue
+                        return uri
         return ''
 
 @dataclass

@@ -19,6 +19,14 @@ Using regex:
 
 ## Deployment
 
+### Docker / Portainer（推薦）
+
+使用 GHCR 預建映像搭配 Portainer Stack 快速部署：
+
+📖 [GHCR + Portainer Stack 部署教學](docs/portainer-ghcr-deploy.md)
+
+### 手動部署
+
 1. Install `python>=3.12` with `pip` and `virtualenv`
 2. Clone this repository
 3. Copy `start.example.py` to `start.py` and edit the `PYTHON` variable to point to your venv or 
