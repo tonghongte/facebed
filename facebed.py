@@ -275,12 +275,6 @@ class Story:
         one_img = Story.fallback_get_link_card_image(post_json)
         if one_img:
             return [one_img]
-        # DEBUG: log attachment keys when no image found, to identify link card structure
-        for i, att in enumerate(all_attachments):
-            logging.info(f'[link_card_debug] attachment[{i}] keys: {list(att.keys())}')
-            for k, v in att.items():
-                if isinstance(v, dict):
-                    logging.info(f'[link_card_debug]   .{k} keys: {list(v.keys())}')
         return []
 
     # facebook broke the original selector for all single-image posts, circa 10/12/2024
@@ -290,20 +284,17 @@ class Story:
             return aa['image']['uri']
         return ''
 
-    # link card attachments (posts embedding an external article/URL) store their
-    # preview image under 'thumbnail' or a bare 'image' dict rather than 'photo_image'
+    # link card attachments store preview image under media.large_share_image
     @staticmethod
     def fallback_get_link_card_image(post_json: dict) -> str:
         for attachment_set in Jq.all(post_json, 'attachment'):
-            for img_key in ('thumbnail', 'image'):
-                for img in Jq.all(attachment_set, img_key):
-                    if isinstance(img, dict) and 'uri' in img:
-                        uri = img['uri']
-                        # skip tiny icons / sticker thumbs (usually < 200px wide)
-                        w = img.get('width', 9999)
-                        if isinstance(w, int) and w < 200:
-                            continue
-                        return uri
+            media = attachment_set.get('media')
+            if not isinstance(media, dict):
+                continue
+            for img_key in ('large_share_image', 'flexible_height_share_image'):
+                img = media.get(img_key)
+                if isinstance(img, dict) and 'uri' in img:
+                    return img['uri']
         return ''
 
 @dataclass
