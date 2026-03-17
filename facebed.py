@@ -58,7 +58,9 @@ class Utils:
     def resolve_share_link(path: str) -> str:
         head_request = rq.head(f'{WWWFB}/{path}', headers=JsonParser.get_headers(), cookies=acc.get_cookies(), allow_redirects=True)
         final_url = head_request.url
-        logging.info(f'[resolve_share_link] status={head_request.status_code} history={[r.url for r in head_request.history]} final={final_url}')
+        parsed = urlparse(final_url)
+        final_url = f'{parsed.scheme}://{parsed.netloc}{parsed.path}'
+        logging.info(f'[resolve_share_link] status={head_request.status_code} final={final_url}')
         if not final_url or final_url.startswith('https://www.facebook.com/share'):
             return ''
         path = final_url.removeprefix(f'{WWWFB}/')
