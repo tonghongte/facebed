@@ -437,7 +437,8 @@ class JsonParser:
         post_json = JsonParser.get_root_node(JsonParser.get_post_json(html_parser))
         likes, cmts, shares = JsonParser.get_interaction_counts(post_json)
         # noinspection PyTypeChecker
-        post_date = int(Jq.first(post_json['context_layout']['story']['comet_sections']['metadata'], 'creation_time'))
+        creation_time = Jq.first(post_json['context_layout']['story']['comet_sections']['metadata'], 'creation_time')
+        post_date = int(creation_time[0] if isinstance(creation_time, list) else creation_time)
         post_json = post_json['content']['story']
 
         story = Story(post_json)
