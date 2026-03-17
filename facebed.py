@@ -56,12 +56,10 @@ def get_credit() -> str:
 class Utils:
     @staticmethod
     def resolve_share_link(path: str) -> str:
-        # cookies not needed to resolve share links
-        head_request = rq.head(f'{WWWFB}/{path}', headers=JsonParser.get_headers())
+        head_request = rq.head(f'{WWWFB}/{path}', headers=JsonParser.get_headers(), cookies=acc.get_cookies())
         if head_request.next is None or head_request.next.url.startswith('https://www.facebook.com/share'):
             return ''
         path = head_request.next.url.removeprefix(f'{WWWFB}/')
-        # print(path)
         return path
 
 
