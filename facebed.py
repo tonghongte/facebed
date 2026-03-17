@@ -775,7 +775,9 @@ def format_redirect_page(url: str) -> str:
 
 def process_post(post_path: str) -> str:
     post_path = post_path.removeprefix(WWWFB).removeprefix('/')
+    logging.info(f'[process_post] fetching post_path={post_path!r}')
     parsed_post = JsonParser.process_post(post_path)
+    logging.info(f'[process_post] result type={type(parsed_post).__name__}')
     if type(parsed_post) == ParsedPost:
         return format_full_post_embed(parsed_post)
     return format_error_message_embed(f'{WWWFB}/{post_path}')
@@ -828,6 +830,7 @@ def index(path: str):
         if re.match('^/*watch', urlparse(path).path):
             return format_reel_post_embed(VideoWatchParser.process_post(path))
 
+        logging.info(f'[routing] path={path!r} is_fb={is_facebook_url(path)}')
         if is_facebook_url(path):
             return process_post(path)
         else:
@@ -835,10 +838,10 @@ def index(path: str):
 
 
     except FacebedException:
-        print(traceback.format_exc())
+        logging.error(traceback.format_exc())
         return format_error_message_embed(f'{WWWFB}/{path}')
     except Exception:
-        print(traceback.format_exc())
+        logging.error(traceback.format_exc())
         return format_error_message_embed(f'{WWWFB}/{path}')
 
 
