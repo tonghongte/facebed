@@ -56,14 +56,12 @@ def get_credit() -> str:
 class Utils:
     @staticmethod
     def resolve_share_link(path: str) -> str:
-        head_request = rq.head(f'{WWWFB}/{path}', headers=JsonParser.get_headers(), cookies=acc.get_cookies(), allow_redirects=True)
-        final_url = head_request.url
-        parsed = urlparse(final_url)
-        final_url = f'{parsed.scheme}://{parsed.netloc}{parsed.path}'
-        logging.info(f'[resolve_share_link] status={head_request.status_code} final={final_url}')
-        if not final_url or final_url.startswith('https://www.facebook.com/share'):
+        # cookies not needed to resolve share links
+        head_request = rq.head(f'{WWWFB}/{path}', headers=JsonParser.get_headers())
+        if head_request.next is None or head_request.next.url.startswith('https://www.facebook.com/share'):
             return ''
-        path = final_url.removeprefix(f'{WWWFB}/')
+        path = head_request.next.url.removeprefix(f'{WWWFB}/')
+        # print(path)
         return path
 
 
@@ -279,8 +277,6 @@ class Story:
         for attachment_set in all_attachments:
             if any([k.endswith('subattachments') for k in attachment_set]):
                 subsets = [v for k, v in attachment_set.items() if k.endswith('subattachments') and 'nodes' in v]
-                if not subsets:
-                    continue
                 max_imgage_count = len(max(subsets, key=lambda it: len(it['nodes']))['nodes'])
                 subsets = [subset for subset in subsets if
                            len(subset['nodes']) == max_imgage_count and Jq.all(subset, 'viewer_image')]
@@ -441,10 +437,7 @@ class JsonParser:
         post_json = JsonParser.get_root_node(JsonParser.get_post_json(html_parser))
         likes, cmts, shares = JsonParser.get_interaction_counts(post_json)
         # noinspection PyTypeChecker
-        creation_time = Jq.first(post_json['context_layout']['story']['comet_sections']['metadata'], 'creation_time')
-        if isinstance(creation_time, list):
-            creation_time = creation_time[0] if creation_time else -1
-        post_date = int(creation_time)
+        post_date = int(Jq.first(post_json['context_layout']['story']['comet_sections']['metadata'], 'creation_time'))
         post_json = post_json['content']['story']
 
         story = Story(post_json)
@@ -782,9 +775,7 @@ def format_redirect_page(url: str) -> str:
 
 def process_post(post_path: str) -> str:
     post_path = post_path.removeprefix(WWWFB).removeprefix('/')
-    logging.info(f'[process_post] fetching post_path={post_path!r}')
     parsed_post = JsonParser.process_post(post_path)
-    logging.info(f'[process_post] result type={type(parsed_post).__name__}')
     if type(parsed_post) == ParsedPost:
         return format_full_post_embed(parsed_post)
     return format_error_message_embed(f'{WWWFB}/{post_path}')
@@ -837,7 +828,6 @@ def index(path: str):
         if re.match('^/*watch', urlparse(path).path):
             return format_reel_post_embed(VideoWatchParser.process_post(path))
 
-        logging.info(f'[routing] path={path!r} is_fb={is_facebook_url(path)}')
         if is_facebook_url(path):
             return process_post(path)
         else:
@@ -845,10 +835,10 @@ def index(path: str):
 
 
     except FacebedException:
-        logging.error(traceback.format_exc())
+        print(traceback.format_exc())
         return format_error_message_embed(f'{WWWFB}/{path}')
     except Exception:
-        logging.error(traceback.format_exc())
+        print(traceback.format_exc())
         return format_error_message_embed(f'{WWWFB}/{path}')
 
 
