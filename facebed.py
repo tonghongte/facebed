@@ -277,6 +277,8 @@ class Story:
         for attachment_set in all_attachments:
             if any([k.endswith('subattachments') for k in attachment_set]):
                 subsets = [v for k, v in attachment_set.items() if k.endswith('subattachments') and 'nodes' in v]
+                if not subsets:
+                    continue
                 max_imgage_count = len(max(subsets, key=lambda it: len(it['nodes']))['nodes'])
                 subsets = [subset for subset in subsets if
                            len(subset['nodes']) == max_imgage_count and Jq.all(subset, 'viewer_image')]
